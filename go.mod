@@ -3,7 +3,12 @@ module github.com/qidaoyigeren/myflame
 go 1.26
 
 require (
-    github.com/alecthomas/participle/v2 v2.0.0  // 路由语法解析器（Day 8 用）
-    github.com/charmbracelet/log v0.1.1          // 结构化日志（Day 12 用）
-    github.com/pkg/errors v0.9.1                 // 错误包装（路由引擎用）
+	github.com/go-playground/assert/v2 v2.2.0
+	github.com/stretchr/testify v1.8.1
+)
+
+require (
+	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/pmezard/go-difflib v1.0.0 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
