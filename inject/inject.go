@@ -1,6 +1,9 @@
 package inject
 
-import "reflect"
+import (
+	"fmt"
+	"reflect"
+)
 
 // TypeMapper:类型映射能力
 type TypeMapper interface {
@@ -119,12 +122,83 @@ func (inj *injector) SetParent(parent Injector) {
 	inj.parent = parent
 }
 
-// Apply implements [Injector].
-func (inj *injector) Apply(interface{}) error {
-	panic("unimplemented")
+// callInvoke 通过反射调用函数 f，从注入器中查找参数值
+func (inj *injector) callInvoker(f interface{}, t reflect.Type, numIn int) ([]reflect.Value, error) {
+	var in []reflect.Value
+	if numIn > 0 {
+		in = make([]reflect.Value, numIn)
+		for i := 0; i < numIn; i++ {
+			argType := t.In(i)
+			argVal := inj.Value(argType)
+			if !argVal.IsValid() {
+				return nil, fmt.Errorf("未找到类型 %v 的注入值", argType)
+			}
+			in[i] = argVal
+		}
+	}
+	return reflect.ValueOf(f).Call(in), nil
 }
 
-// Invoke implements [Injector].
-func (inj *injector) Invoke(interface{}) ([]reflect.Value, error) {
-	panic("unimplemented")
+// 实现 fastInvoke（高性能调用）
+// fastInvoke 通过 FastInvoker 接口调用，跳过反射
+func (inj *injector) fastInvoke(f FastInvoker, t reflect.Type, numIn int) ([]reflect.Value, error) {
+	var in []interface{}
+	if numIn > 0 {
+		in = make([]interface{}, numIn)
+		for i := 0; i < numIn; i++ {
+			argType := t.In(i)
+			argVal := inj.Value(argType)
+			if !argVal.IsValid() {
+				return nil, fmt.Errorf("未找到类型 %v 的注入值", argType)
+			}
+			in[i] = argVal.Interface()
+		}
+	}
+	return f.Invoke(in)
+}
+
+// Invoke 自动调用函数 f，从注入器中查找所有参数值。
+// 如果 f 实现了 FastInvoker 则走快速路径，否则走反射路径。
+func (inj *injector) Invoke(f interface{}) ([]reflect.Value, error) {
+	t := reflect.TypeOf(f)
+	//分流：FastInvoker走快速路径
+	switch v := f.(type) {
+	case FastInvoker:
+		return inj.fastInvoke(v, t, t.NumIn())
+	default:
+		return inj.callInvoker(f, t, t.NumIn())
+	}
+}
+
+// Apply 遍历结构体的所有字段，将带有 `inject` tag 的字段自动注入值
+func (inj *injector) Apply(val interface{}) error {
+	//获取val的reflect.Value
+	v := reflect.ValueOf(val)
+	//在 Go 反射中，如果你传入的是一个指针（如 *User），你是无法直接遍历它的字段的
+	//一直解引用直到结构体
+	for v.Kind() == reflect.Ptr {
+		v = v.Elem()
+	}
+	//非结构体忽略
+	if v.Kind() != reflect.Struct {
+		return nil
+	}
+	//遍历字段
+	k := v.Type()
+	for i := 0; i < v.NumField(); i++ {
+		f := v.Field(i)
+		structField := k.Field(i)
+		_, ok := structField.Tag.Lookup("inject")
+		if !ok || !f.CanSet() {
+			continue
+		}
+		ft := f.Type()
+		injVal := inj.Value(ft)
+		if !injVal.IsValid() {
+			return fmt.Errorf("字段 %s 需要类型 %v，但注入器中没有注册", structField.Name, ft)
+		}
+		f.Set(injVal)
+		//f.Set() 底层会执行类似于 struct.Field = value 的操作，将容器中的实例塞进结构体的字段里。
+	}
+	return nil
 }
