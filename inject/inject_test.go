@@ -139,3 +139,34 @@ func TestInjector_Implementors(t *testing.T) {
 	inj.Map(&greeter{Name: "John"})
 	assert.True(t, inj.Value(InterfaceOf((*fmt.Stringer)(nil))).IsValid())
 }
+
+func TestIsFastInvoker(t *testing.T) {
+	assert.True(t, IsFastInvoker(myFastInvoker(nil)))
+}
+
+func BenchmarkInjector_Invoke(b *testing.B) {
+	inj := New()
+	inj.Map("some dependency").MapTo("another dep", (*specialString)(nil))
+
+	fn := func(d1 string, d2 specialString) string { return "something" }
+	for i := 0; i < b.N; i++ {
+		_, _ = inj.Invoke(fn)
+	}
+}
+
+type testFastInvoker func(d1 string, d2 specialString) string
+
+func (f testFastInvoker) Invoke(args []interface{}) ([]reflect.Value, error) {
+	f(args[0].(string), args[1].(specialString))
+	return nil, nil
+}
+
+func BenchmarkInjector_FastInvoke(b *testing.B) {
+	inj := New()
+	inj.Map("some dependency").MapTo("another dep", (*specialString)(nil))
+
+	fn := testFastInvoker(func(d1 string, d2 specialString) string { return "something" })
+	for i := 0; i < b.N; i++ {
+		_, _ = inj.Invoke(fn)
+	}
+}
